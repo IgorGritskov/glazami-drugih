@@ -1,3 +1,6 @@
+import { PilotFeedback } from './components/PilotFeedback'
+import { getPilotSession } from './services/pilotSession'
+import { submitResponse } from './services/remoteAnalytics'
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'motion/react'
 import { igor } from './data/profiles/igor'
@@ -5,7 +8,7 @@ import { copy, questions, specialOptions as special } from './data/copy'
 import { Choices, Score } from './components/Choices'
 import { ResultActions } from './components/ResultActions'
 import { freshDraft, initializeResponse, resetResponse, saveMirrorInterest, saveResponse } from './services/storage'
-import { track, type AnalyticsEvent } from './services/analytics'
+import { track, trackSessionOpened, type AnalyticsEvent } from './services/analytics'
 import { platform } from './services/platform'
 import { buildResultNarrative } from './services/resultNarrative'
 import { useResultCard } from './hooks/useResultCard'
@@ -26,6 +29,7 @@ export default function App() {
   const carousel = useRef<HTMLDivElement>(null)
   const openingTimer = useRef<number | undefined>(undefined)
   const { screen, response: r } = draft
+  const sessionId = getPilotSession().id
   const journeyRestore = useRef(draft.journeyIndex)
   const result = buildResultNarrative(igor, r)
   const resultCard = useResultCard(igor, r, screen >= 12)
@@ -38,7 +42,8 @@ export default function App() {
     }, reduced ? 0 : 320)
     return () => clearTimeout(timer)
   }, [screen, reduced])
-  useEffect(() => { track('app_opened'); return () => clearTimeout(openingTimer.current) }, [])
+  useEffect(() => { trackSessionOpened() }, [sessionId])
+  useEffect(() => () => clearTimeout(openingTimer.current), [])
   useEffect(() => { setStorageOK(saveResponse(draft)) }, [draft])
   useEffect(() => { window.scrollTo({ top: 0 }); heading.current?.focus({ preventScroll: true }) }, [screen])
   useEffect(() => {
@@ -50,6 +55,11 @@ export default function App() {
     }, reduced ? 0 : 2500)
     return () => { clearInterval(interval); clearTimeout(timer) }
   }, [screen, reduced])
+  useEffect(() => {
+    const steps = ['intro', 'context', 'journey', 'why', 'calibration', 'question_1', 'question_2', 'question_3', 'question_4', 'question_5', 'question_6', 'open_answer', 'result', 'reward', 'create_mirror']
+    track('step_viewed', { step: steps[screen] })
+    if (r.completedAt) submitResponse(r)
+  }, [screen, r.completedAt])
   const update = <K extends keyof ResponseState>(key: K, value: ResponseState[K]) => setDraft(d => ({ ...d, response: { ...d.response, [key]: value } }))
   function next(event?: AnalyticsEvent) {
     if (event) track(event)
@@ -137,6 +147,7 @@ export default function App() {
       {screen === 12 && (assembling ? <div className="assembly" role="status"><div className="assembly-orbit" aria-hidden="true">◐</div><h1>{copy.result.assembling}<br /><em>{copy.result.assemblingEmphasis}</em></h1>{copy.result.steps.map((v, i) => <p className={assemblyStep > i ? 'done' : ''} key={v}>{v}<span>{assemblyStep > i ? '✓' : '·'}</span></p>)}</div> : <><p className="eyebrow">{copy.result.eyebrow}</p><h1>{copy.result.title}<br /><em>{copy.result.emphasis}</em></h1><article className="portrait"><div className="result-header"><span>{copy.result.personal}</span><span aria-hidden="true">◐</span></div><h2 className="portrait-title">{result.title}</h2><div className="portrait-narrative">{result.paragraphs.map((paragraph, i) => <p key={i}>{paragraph}</p>)}</div><div className="trust-result"><span>{copy.result.trust}</span><strong>{result.trustScore}<small> / 10</small></strong></div>{result.openAnswer && <blockquote><span>{copy.result.openAnswer}</span><p>{result.openAnswer}</p></blockquote>}<div className="result-seal">{copy.brand} / {new Date(r.completedAt || Date.now()).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' })}</div></article><p className="hint result-caption">{copy.result.caption}</p><ResultActions {...resultCard} />{footer(copy.result.final, () => next())}</>)}
       {screen === 13 && <>{!draft.rewardOpened ? <><p className="eyebrow">{copy.reward.eyebrow}</p><h1>{copy.reward.title}</h1><p className="question preserve-lines">{copy.reward.question}</p><button className="capsule-button" aria-label={copy.reward.openLabel} disabled={rewardOpening} onClick={openReward}><motion.div className={`capsule ${rewardOpening ? 'capsule-opening' : ''}`} animate={reduced ? {} : rewardOpening ? { scale: 1.08, opacity: 0, y: -12 } : { y: [0, -8, 0] }} transition={rewardOpening ? { duration: .6 } : { duration: 4, repeat: Infinity }}><div className="capsule-inner">◐</div></motion.div><span role="status">{rewardOpening ? copy.reward.opening : copy.reward.instruction}</span></button></> : <motion.div initial={{ opacity: 0, scale: .96 }} animate={{ opacity: 1, scale: 1 }} className="reward-reveal"><div className="particles" aria-hidden="true">{[0,1,2,3,4].map(i => <motion.span key={i} initial={{ opacity: 0, y: 15 }} animate={{ opacity: [0, 1, .25], y: -12 }} transition={{ duration: reduced ? 0 : 1.2, delay: reduced ? 0 : i * .07 }} />)}</div><p className="eyebrow">{copy.reward.reveal}</p><h1>{copy.reward.own}<br /><em>{copy.reward.mirror}</em></h1><p className="question preserve-lines">{copy.reward.questionAfter}</p><ol className="reward-steps">{copy.reward.steps.map(step => <li key={step}>{step}</li>)}</ol><p className="hint">{copy.reward.hint}</p>{footer(copy.reward.create, () => next('create_mirror_clicked'))}<ResultActions {...resultCard} compact /><button className="text-button" onClick={() => setDraft(d => ({ ...d, screen: 12 }))}>{copy.reward.later}</button></motion.div>}</>}
       {screen === 14 && <><div className="mirror-symbol" aria-hidden="true">◐</div><p className="eyebrow">{copy.interest.eyebrow}</p><h1>{r.createMirrorInterest ? <>{copy.interest.done}<br /><em>{copy.interest.doneEmphasis}</em></> : <>{copy.interest.title}<br /><em>{copy.interest.emphasis}</em></>}</h1><p className="story">{r.createMirrorInterest ? copy.interest.confirmation : copy.interest.description}</p>{!r.createMirrorInterest && footer(copy.interest.cta, () => { saveMirrorInterest(); update('createMirrorInterest', true); platform.haptic() })}<ResultActions {...resultCard} compact /><button className="text-button" onClick={() => setDraft(d => ({ ...d, screen: 12 }))}>{copy.result.show}</button></>}
+      {(screen === 14 || (screen === 13 && draft.rewardOpened)) && <PilotFeedback key={getPilotSession().id} expanded={screen === 14} />}
       {(screen === 14 || (screen === 13 && draft.rewardOpened)) && <button className="text-button" onClick={restartSurvey}>{copy.startAgain}</button>}
     </motion.div></AnimatePresence>
     {(import.meta.env.DEV || new URLSearchParams(window.location.search).has('prototype')) && <details className="dev-control"><summary>{copy.prototype}</summary><button onClick={() => { if (window.confirm(copy.restartConfirm)) { restartSurvey() } }}>{copy.restart}</button></details>}

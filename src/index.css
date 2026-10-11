@@ -182,3 +182,9 @@ textarea::placeholder, input::placeholder { color: #777; }
   .actions-grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .choice.selected { transform: none; } }
+/* Optional pilot feedback extends the final flow without changing core screens. */
+.pilot-feedback { margin-top: 32px; padding-top: 28px; border-top: 1px solid #393225; }
+.pilot-feedback h2 { font-size: 29px; line-height: 1.3; }
+.pilot-feedback h3 { font-size: 17px; }
+.pilot-rating { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.pilot-rating .choice { justify-content: center; min-height: 48px; font-size: 18px; }

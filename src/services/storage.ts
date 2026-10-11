@@ -1,3 +1,4 @@
+import { rotatePilotSession } from './pilotSession'
 import { emptyResponse, type Draft } from '../types/profile'
 const key = 'mirror:igor:v2'
 function hasMirrorInterest(): boolean {
@@ -18,7 +19,7 @@ export function loadResponse(): Draft {
 export function saveResponse(draft: Draft): boolean {
   try { localStorage.setItem(key, JSON.stringify(draft)); return true } catch { return false }
 }
-export function resetResponse() { try { localStorage.removeItem(key) } catch { /* Storage may be unavailable. */ } }
+export function resetResponse() { try { localStorage.removeItem(key) } catch { /* Storage may be unavailable. */ } rotatePilotSession() }
 export function saveMirrorInterest() { try { localStorage.setItem('create_mirror_interest', 'true') } catch { /* In-memory confirmation still works. */ } }
 
 // Consume the reset flag before React mounts: keep other parameters and the hash.

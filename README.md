@@ -1,6 +1,6 @@
-# Зеркало · Игорь глазами других — Version 0.2
+# Зеркало · Игорь глазами других — Version 0.2.1
 
-Мобильная мини-игра обратной связи на React, TypeScript, Vite, Tailwind CSS и Motion. Без сервера, аккаунтов и AI-анализа.
+Мобильная мини-игра обратной связи на React, TypeScript, Vite, Tailwind CSS и Motion. С необязательной pilot-аналитикой Supabase, без аккаунтов и AI-анализа.
 
 ## Запуск
 
@@ -35,12 +35,12 @@ npm run preview -- --host 0.0.0.0
 - `src/services/resultNarrative.ts` — deterministic builder. Нейтральные potential/risk, отказ от проекта/звонка и собственный вариант обрабатываются отдельно. Русские формы заданы в профиле; неизвестные варианты цитируются буквально. Карточка Stories использует короткий шаблон, длинные собственные формулировки сокращаются с многоточием.
 - `src/services/resultCard.ts` — Canvas PNG 1080×1920 с логотипом, именем, портретом, доверием и CTA. Переносы измеряются Canvas; длинные слова разбиваются; размер шрифта подстраивается в ограниченной области. Фото и сетевые ресурсы не нужны для экспорта.
 - `src/hooks/useResultCard.ts` — предварительная генерация перед нажатием, чтобы сохранить user activation на iOS. Object URL освобождается при смене ответов/выходе.
-- `src/services/share.ts` — file sharing через Web Share API, fallback — download PNG. `createSharePayload(card, url?)` принимает будущую ссылку, но не выдумывает её сейчас. Отмена системного меню не считается ошибкой.
+- `src/services/share.ts` — file sharing через Web Share API, fallback — download PNG. `createSharePayload(card, url?)` принимает ссылку; успешный share регистрирует случайный referral ID. Отмена системного меню не считается ошибкой.
 - `src/components/ResultActions.tsx` — сохранение, share, статусы и просмотр PNG. На iPhone сохранение предлагает системное меню; выбор Photos приложение не может проверить. Успешный share означает передачу файлу системного меню, а не подтверждение публикации или записи в Photos.
 
 ## Существующие сервисы
 
-- `src/services/storage.ts` — `loadResponse` / `saveResponse`; localStorage можно заменить API. Все ответы и интерес `create_mirror_interest` остаются на устройстве.
+- `src/services/storage.ts` — `loadResponse` / `saveResponse`; localStorage можно заменить API. Черновик и интерес `create_mirror_interest` сохраняются на устройстве; завершённые ответы отправляются при настроенном Supabase.
 - `src/services/analytics.ts` — последние 200 событий локально, console в dev. Добавлены события просмотра narrative, генерации/сохранения PNG и share; содержимое ответов не логируется.
 - `src/services/platform.ts` — адаптер для будущего Telegram SDK/haptics/user/start_param/buttons.
 - `src/components/Choices.tsx` — общая механика лимитов и эксклюзивных нейтральных ответов.
@@ -54,4 +54,29 @@ npm run preview -- --host 0.0.0.0
 
 ## Будущее (не реализовано)
 
-TODO: builder с optional biography, фото и выбором вопросов. TODO: дополнительные блоки после **трёх реальных завершённых ответов** новых людей, а не за сам факт share. Нет backend, referral-системы, платежей, авторизации и агрегирования чужих ответов.
+TODO: builder с optional biography, фото и выбором вопросов. TODO: дополнительные блоки после **трёх реальных завершённых ответов** новых людей, а не за сам факт share. Конструктор, платежи, авторизация и публичный просмотр агрегированных ответов не реализованы. Pilot-backend и referral-учёт описаны ниже.
+
+## Pilot Analytics · Version 0.2.1
+
+Новые файлы: `src/services/supabase.ts`, `remoteAnalytics.ts`, `pilotSession.ts`, `src/components/PilotFeedback.tsx`, `supabase/schema.sql`, `.env.example`, `docs/PILOT_METRICS.md`.
+
+**Подключение Supabase — что нажать:**
+
+1. Откройте https://supabase.com/dashboard → **New project**. Выберите организацию, имя и регион; задайте пароль БД и сохраните его отдельно. Дождитесь запуска проекта.
+2. В левом меню откройте **SQL Editor** → **New query**. Вставьте целиком содержимое `supabase/schema.sql` и нажмите **Run**. Скрипт можно выполнить повторно; он не удаляет данные.
+3. Откройте **Project Settings** → **Data API** (в некоторых версиях интерфейса **API**) и скопируйте **Project URL**.
+4. Откройте **Project Settings** → **API Keys**. Скопируйте **Publishable key** (`sb_publishable_…`) либо legacy **anon/public** key. **Не используйте Secret key / service_role.**
+5. Для локальной разработки скопируйте `.env.example` в `.env.local` и заполните `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY`. Эти два публичных значения нужны для реального подключения. Перезапустите `npm run dev`; затем выполните `npm run build`.
+6. Для размещённого preview задайте эти же две переменные в окружении **сборки** и пересоберите приложение: Vite встраивает `VITE_*` при build. Изменения runtime env уже собранного JS недостаточно. Сейчас код подготовлен; credentials не выдуманы, реальный backend не подключён.
+7. Пройдите приложение с `?src=test&reset=1`. В Dashboard → **Table Editor** убедитесь, что появляются `mirror_sessions`, `mirror_events`, затем одна строка `mirror_responses` на завершённое прохождение. Добровольный feedback появится в `mirror_feedback`, контакт — отдельно в `mirror_leads`.
+8. Для статистики откройте **SQL Editor** и вставляйте готовые запросы из [docs/PILOT_METRICS.md](docs/PILOT_METRICS.md): funnel, conversion, feedback, ответы, drop-off и referral. Список добровольных контактов смотрите в Table Editor → `mirror_leads`.
+
+`track(event, metadata?)` сохраняет локальный fallback и ставит событие в асинхронную очередь Supabase. Черновики не отправляются на каждый выбор: финальный response ставится в очередь один раз при завершении, уникальный `session_id` в БД исключает дубли. События имеют UUID для идемпотентного повтора. Очередь переживает refresh, повторяет отправку через 30 секунд/при online и не блокирует UI. Если env отсутствуют или сеть недоступна, всё работает локально; warning показывается только в dev-консоли. Не очищайте localStorage, если хотите позже дослать накопленные локальные данные.
+
+Каждое прохождение имеет случайный `crypto.randomUUID()` session ID и случайный токен права записи; refresh сохраняет их, restart/reset создаёт новые. `?ref=…&src=telegram&reset=1` поддерживаются вместе. Успешный Web Share регистрирует новый share ID; payload содержит URL с `ref`, но никогда session ID. Скачивание PNG не считается успешным share. Контакт предлагается только после feedback с intent yes/maybe; username 5–32 символа, начинается с буквы, допускает цифры/underscore и необязательный @. Контактные запросы не содержат session ID, токена, ref или ответов. Введённый контакт не попадает в analytics metadata.
+
+Таблицы закрыты RLS; anon получает только EXECUTE двух ограниченных RPC. Владельцу доступны данные через Dashboard. Прямого публичного SELECT/UPDATE таблиц нет. Полный SQL и пояснения privacy находятся в `supabase/schema.sql` и документе метрик.
+
+Реальные `.env.local`/secrets не коммитятся. `VITE_SUPABASE_ANON_KEY` — публичный клиентский ключ, не секретный серверный ключ. Контакты добровольны; основная анкета не требует имени или контакта. Реальные Supabase URL/key в текущей среде отсутствуют: проверка реальной удалённой записи возможна после их добавления.
+
+Проверка 0.2.1: полный сценарий без env; сбой сети и восстановление очереди через mock API; отдельная отправка контакта; referral/reset; SQL-схема выполнена дважды на локальной PostgreSQL 17. Проверены ограничения anon, токены записи, отсутствие дублей и все запросы метрик. Эти проверки не заменяют проверку записи в реальный Supabase после подключения.
