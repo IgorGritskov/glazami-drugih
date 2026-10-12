@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { pilotCopy } from '../data/copy'
 import { getPilotSession } from '../services/pilotSession'
-import { getPendingFeedback, isFeedbackConfirmed, submitFeedback, submitLead, validTelegramUsername } from '../services/remoteAnalytics'
+import { getPendingFeedback, getPendingLead, isFeedbackConfirmed, submitFeedback, submitLead, validTelegramUsername } from '../services/remoteAnalytics'
 import { track } from '../services/analytics'
 import { saveMirrorInterest } from '../services/storage'
 interface FeedbackDraft { phase: 'closed' | 'feedback' | 'lead' | 'done'; rating: number; intent: 'yes' | 'maybe' | 'no' | ''; comment: string; contactSaved: boolean }
@@ -11,6 +11,7 @@ export function PilotFeedback({ expanded = false }: { expanded?: boolean }) {
     try { const saved = JSON.parse(localStorage.getItem(key) || 'null'); if (saved && ['closed','feedback','lead','done'].includes(saved.phase)) {
       const pending = getPendingFeedback()
       if (pending) return { ...saved, phase: 'feedback', rating: pending.rating, intent: pending.createOwnIntent, comment: pending.comment }
+      if (getPendingLead() && (saved.phase === 'lead' || saved.contactSaved)) return { ...saved, phase: 'lead', contactSaved: false }
       return saved.rating && !isFeedbackConfirmed(session.id) ? { ...saved, phase: 'feedback' } : saved
     } } catch { /* Local fallback. */ }
     return { phase: expanded ? 'feedback' : 'closed', rating: 0, intent: '', comment: '', contactSaved: false }
@@ -31,7 +32,21 @@ export function PilotFeedback({ expanded = false }: { expanded?: boolean }) {
     } catch { setSendFailed(true) }
     finally { sendingRef.current = false; setSending(false) }
   }
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState(getPendingLead)
+  const [leadSending, setLeadSending] = useState(false)
+  const [leadFailed, setLeadFailed] = useState(false)
+  const leadSendingRef = useRef(false)
+  const leadLocked = leadSending || !!getPendingLead()
+  async function sendLead() {
+    if (leadSendingRef.current || !validTelegramUsername(username)) return
+    leadSendingRef.current = true; setLeadSending(true); setLeadFailed(false)
+    try {
+      await submitLead(username)
+      track('lead_submitted'); setUsername('')
+      setDraft(d => ({ ...d, phase: 'done', contactSaved: true }))
+    } catch { setLeadFailed(true) }
+    finally { leadSendingRef.current = false; setLeadSending(false) }
+  }
   useEffect(() => { if (expanded && draft.phase === 'closed') setDraft(d => ({ ...d, phase: 'feedback' })) }, [expanded, draft.phase])
   useEffect(() => {
     try { localStorage.setItem(key, JSON.stringify(draft)) } catch { /* UI still works. */ }
@@ -40,7 +55,7 @@ export function PilotFeedback({ expanded = false }: { expanded?: boolean }) {
   }, [draft, key])
   if (draft.phase === 'closed') return <button className="text-button" onClick={() => setDraft(d => ({ ...d, phase: 'feedback' }))}>{pilotCopy.entry}</button>
   if (draft.phase === 'done') return <section className="pilot-feedback"><h2>{pilotCopy.thanks}</h2><p className="hint" role="status">{draft.contactSaved ? pilotCopy.contactSaved : draft.rating && isFeedbackConfirmed(session.id) ? pilotCopy.saved : pilotCopy.optional}</p></section>
-  if (draft.phase === 'lead') return <section className="pilot-feedback"><h2>{pilotCopy.leadTitle}</h2><p className="question">{pilotCopy.leadText}</p><label className="other-input">{pilotCopy.leadLabel}<input value={username} onChange={e => setUsername(e.target.value)} placeholder={pilotCopy.leadPlaceholder} maxLength={33} autoComplete="off" autoCapitalize="none" spellCheck={false} /></label><p className="hint">{pilotCopy.leadHint}</p><p className="hint preserve-lines">{pilotCopy.privacy}</p><button className="primary" disabled={!validTelegramUsername(username)} onClick={() => { if (submitLead(username)) { track('lead_submitted'); setUsername(''); setDraft(d => ({ ...d, phase: 'done', contactSaved: true })) } }}>{pilotCopy.leadSubmit}</button><button className="text-button" onClick={() => setDraft(d => ({ ...d, phase: 'done' }))}>{pilotCopy.later}</button></section>
+  if (draft.phase === 'lead') return <section className="pilot-feedback"><h2>{pilotCopy.leadTitle}</h2><p className="question">{pilotCopy.leadText}</p><label className="other-input">{pilotCopy.leadLabel}<input disabled={leadLocked} value={username} onChange={e => setUsername(e.target.value)} placeholder={pilotCopy.leadPlaceholder} maxLength={33} autoComplete="off" autoCapitalize="none" spellCheck={false} /></label><p className="hint">{pilotCopy.leadHint}</p><p className="hint preserve-lines">{pilotCopy.privacy}</p><button className="primary" disabled={leadSending || !validTelegramUsername(username)} onClick={sendLead}>{leadSending ? pilotCopy.sending : leadFailed || getPendingLead() ? pilotCopy.retry : pilotCopy.leadSubmit}</button><p className="hint" role="status" aria-live="polite">{leadSending ? pilotCopy.sending : leadFailed || getPendingLead() ? pilotCopy.leadSendFailed : ''}</p><button className="text-button" disabled={leadLocked} onClick={() => setDraft(d => ({ ...d, phase: 'done' }))}>{pilotCopy.later}</button></section>
   return <section className={`pilot-feedback ${expanded ? 'pilot-feedback-final' : ''}`} aria-label={pilotCopy.optional}>
     {expanded ? <h1>{pilotCopy.title}</h1> : <h2>{pilotCopy.title}</h2>}<p className="hint preserve-lines">{pilotCopy.intro}</p>
     <h3 id="pilot-rating-label">{pilotCopy.rating}</h3><div className="pilot-rating" role="radiogroup" aria-labelledby="pilot-rating-label">{[1,2,3,4,5].map(value => <button className={`pilot-star ${draft.rating >= value ? 'filled' : ''}`} role="radio" aria-checked={draft.rating === value} aria-label={`${value} из 5 звёзд`} tabIndex={draft.rating === value || (!draft.rating && value === 1) ? 0 : -1} key={value} disabled={locked} onClick={() => setDraft(d => ({ ...d, rating: value }))} onKeyDown={e => {
