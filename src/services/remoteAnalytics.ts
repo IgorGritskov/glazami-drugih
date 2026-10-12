@@ -5,6 +5,22 @@ interface Task { id: string; rpc: 'mirror_ingest' | 'mirror_submit_lead'; args: 
 const queueKey = 'mirror:remote-outbox:v1'
 let queue: Task[] = (() => { try { const value = JSON.parse(localStorage.getItem(queueKey) || '[]'); return Array.isArray(value) ? value : [] } catch { return [] } })()
 let flushing = false, retryTimer: number | undefined
+const feedbackWaiters = new Map<string, { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void }>()
+const confirmedFeedback = new Set<string>()
+export function isFeedbackConfirmed(sessionId = getPilotSession().id): boolean {
+  if (confirmedFeedback.has(sessionId)) return true
+  try { return localStorage.getItem(`mirror:feedback-confirmed:${sessionId}`) === 'true' } catch { return false }
+}
+export function getPendingFeedback(): PilotFeedbackData | null {
+  const task = queue.find(item => item.id === `feedback:${getPilotSession().id}`)
+  const data = task?.args.p_feedback as { rating: number; create_own_intent: PilotFeedbackData['createOwnIntent']; comment: string } | undefined
+  return data ? { rating: data.rating, createOwnIntent: data.create_own_intent, comment: data.comment } : null
+}
+function failFeedbackWaiters() {
+  for (const waiter of feedbackWaiters.values()) waiter.reject(new Error('Feedback not confirmed'))
+  feedbackWaiters.clear()
+}
+
 function persist() { try { localStorage.setItem(queueKey, JSON.stringify(queue)) } catch { remoteUnavailable() } }
 function enqueue(task: Task) {
   if (queue.some(item => item.id === task.id)) return
@@ -15,16 +31,25 @@ function sessionArgs() {
   return { p_session_id: s.id, p_write_token: s.writeToken, p_profile_id: s.profileId, p_created_at: s.createdAt, p_source: s.source, p_referred_by: s.referredBy }
 }
 export async function flushRemoteAnalytics() {
-  if (!supabase || flushing || !queue.length) return
+  if (!supabase) { failFeedbackWaiters(); return }
+  if (flushing || !queue.length) return
   flushing = true
   try {
     while (queue.length) {
       const task = queue[0]
       const { error } = await supabase.rpc(task.rpc, task.args)
       if (error) throw error
+      if (task.id.startsWith('feedback:')) {
+        const sessionId = task.id.slice('feedback:'.length)
+        confirmedFeedback.add(sessionId)
+        try { localStorage.setItem(`mirror:feedback-confirmed:${sessionId}`, 'true') } catch { /* Memory receipt remains available. */ }
+        feedbackWaiters.get(task.id)?.resolve()
+        feedbackWaiters.delete(task.id)
+      }
       queue = queue.filter(item => item.id !== task.id); persist()
     }
   } catch {
+    failFeedbackWaiters()
     remoteUnavailable()
     if (!retryTimer) retryTimer = window.setTimeout(() => { retryTimer = undefined; void flushRemoteAnalytics() }, 30000)
   } finally { flushing = false }
@@ -41,9 +66,20 @@ export function submitResponse(response: ResponseState) {
   try { localStorage.setItem(marker, 'true') } catch { /* Server unique key prevents duplicate responses. */ }
 }
 export interface PilotFeedbackData { rating: number; createOwnIntent: 'yes' | 'maybe' | 'no'; comment: string }
-export function submitFeedback(data: PilotFeedbackData) {
-  enqueue({ id: `feedback:${getPilotSession().id}`, rpc: 'mirror_ingest', args: { ...sessionArgs(), p_feedback: { rating: data.rating, create_own_intent: data.createOwnIntent, comment: data.comment.trim() } } })
+export function submitFeedback(data: PilotFeedbackData): Promise<void> {
+  const sessionId = getPilotSession().id, id = `feedback:${sessionId}`
+  if (isFeedbackConfirmed(sessionId)) return Promise.resolve()
+  const existing = feedbackWaiters.get(id)
+  if (existing) return existing.promise
+  let resolve!: () => void, reject!: (error: Error) => void
+  const promise = new Promise<void>((onSuccess, onError) => { resolve = onSuccess; reject = onError })
+  feedbackWaiters.set(id, { promise, resolve, reject })
+  enqueue({ id, rpc: 'mirror_ingest', args: { ...sessionArgs(), p_feedback: { rating: data.rating, create_own_intent: data.createOwnIntent, comment: data.comment.trim() } } })
+  // An existing failed task must also be flushed on an explicit retry.
+  void flushRemoteAnalytics()
+  return promise
 }
+
 export function registerSuccessfulShare(shareId: string) {
   enqueue({ id: `share:${shareId}`, rpc: 'mirror_ingest', args: { ...sessionArgs(), p_share_id: shareId } })
 }

@@ -1,6 +1,6 @@
 import type { Profile } from '../../types/profile'
 export const igor: Profile = {
-  id: 'igor', name: 'Игорь', age: 42, coverPhoto: '/images/igor-cover.jpg', coverFallback: '/images/igor-fallback.svg',
+  id: 'igor', name: 'Игорь', age: 42, coverPhoto: '/images/igor-cover.webp', coverFallback: '/images/igor-fallback.svg',
   bioEnabled: true,
   bioCards: ['42 года', '18 лет в армии', 'Майор запаса', 'Инженер по нефтегазовой инфраструктуре', 'Семья · спорт · новые проекты'],
   specialization: 'Проектирование, сооружение и эксплуатация газонефтепроводов и газонефтехранилищ',
