@@ -63,7 +63,7 @@ h3 { font-weight: 400; font-size: 21px; line-height: 1.35; margin: 25px 0 15px; 
 .score input { width: 100%; accent-color: #D5B36A; height: 44px; cursor: pointer; }
 .range-labels { display: flex; justify-content: space-between; gap: 22px; color: #999; font-size: 10px; line-height: 1.5; }
 .range-labels span:last-child { text-align: right; }
-.choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.choices { display: grid; grid-auto-flow: row dense; align-items: stretch; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .choice { overflow-wrap: anywhere; min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 15px; background: #151515; border: 1px solid #292929; color: #d5d3ce; border-radius: 15px; text-align: left; padding: 13px 14px; font-size: 14px; line-height: 1.4; }
 .choice.selected { border-color: #D5B36A; color: #17140e; background: #D5B36A; transform: scale(.99); }
 .choice:disabled { opacity: 1; color: #8e8c85; background: #111; border-color: #252525; }
@@ -173,8 +173,6 @@ textarea::placeholder, input::placeholder { color: #777; }
 .capsule { box-shadow: 0 25px 70px #d5b36a16, 0 0 30px #d5b36a07; }
 .capsule-opening .capsule-inner { border-color: #d5b36a; }
 @media (max-width: 350px) {
-  .choices { grid-template-columns: 1fr; }
-  .choice-wide { grid-column: auto; }
   .intro-spacer { min-height: 24svh; }
   .intro-content h1 { font-size: 43px; }
   .intro-content .meta { font-size: 9px; }
